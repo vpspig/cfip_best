@@ -2,40 +2,56 @@ name: Update IP List
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 每隔三十分钟运行一次
-  workflow_dispatch:  # 手动触发
- # push: # 允许提交触发
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 jobs:
-
   update-ip-list:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
-    - uses: actions/checkout@v3
-      
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests
-        pip install beautifulsoup4
+        pip install requests beautifulsoup4
         
     - name: Run script
       run: python ${{ github.workspace }}/collect_ips.py
-        
+    
+    - name: Check for changes
+      id: check_changes
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+        fi
+    
     - name: Commit and push changes
+      if: steps.check_changes.outputs.has_changes == 'true'
       run: |
         git config --global user.email "vpspig@gmail.com"
         git config --global user.name "vpspig"
-        if [ -n "$(git status --porcelain)" ]; then
-          git add ipv4.txt
-          git commit -m "Automatic update"
-          git push
-        else
-          echo "No changes detected, skipping commit."
-        fi
+        
+        # 添加所有新文件和修改
+        git add -A
+        
+        # 提交
+        git commit -m "Update IP lists $(date +'%Y-%m-%d %H:%M:%S') [skip ci]"
+        
+        # 使用--force-with-lease安全推送
+        git push --force-with-lease origin main
+        
+        echo "✅ Changes pushed successfully"
